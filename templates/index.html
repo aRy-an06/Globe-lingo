@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GlobeLingo | AI Translator</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Navbar -->
+        <nav class="navbar">
+            <div class="logo">
+                <i class="fa-solid fa-earth-americas"></i>
+                <span>GlobeLingo</span>
+            </div>
+            <button id="themeToggle" class="icon-btn theme-toggle" aria-label="Toggle Theme">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+        </nav>
+
+        <!-- Hero Section -->
+        <header class="hero">
+            <h1>Translate Instantly Anywhere</h1>
+            <p>Your AI-powered travel assistant for text, voice, and images.</p>
+        </header>
+
+        <!-- Main Layout -->
+        <main class="main-content">
+            <!-- Left Column: Translation Tools -->
+            <div class="translation-column">
+                
+                <!-- Main Translation Card -->
+                <div class="card translation-card">
+                    <!-- Language Selection -->
+                    <div class="language-controls">
+                        <select id="sourceLang">
+                            <option value="auto">Auto Detect</option>
+                            <!-- Options populated by JS -->
+                        </select>
+                        
+                        <button id="swapBtn" class="icon-btn swap-btn" aria-label="Swap Languages">
+                            <i class="fa-solid fa-right-left"></i>
+                        </button>
+                        
+                        <select id="targetLang">
+                            <!-- Options populated by JS -->
+                        </select>
+                    </div>
+
+                    <!-- Text Areas -->
+                    <div class="text-areas-grid">
+                        <!-- Source Box -->
+                        <div class="text-box">
+                            <div class="box-header">
+                                <span>Source Text</span>
+                                <span id="detectedLangLabel" class="detected-label"></span>
+                                <div class="box-actions">
+                                    <button id="clearBtn" class="icon-btn"><i class="fa-solid fa-xmark"></i></button>
+                                    <button id="speakSourceBtn" class="icon-btn"><i class="fa-solid fa-volume-high"></i></button>
+                                </div>
+                            </div>
+                            <textarea id="sourceText" placeholder="Type text to translate..."></textarea>
+                        </div>
+
+                        <!-- Target Box -->
+                        <div class="text-box">
+                            <div class="box-header">
+                                <span>Translation</span>
+                                <div class="box-actions">
+                                    <button id="copyBtn" class="icon-btn"><i class="fa-solid fa-copy"></i></button>
+                                    <button id="speakTargetBtn" class="icon-btn"><i class="fa-solid fa-volume-high"></i></button>
+                                    <button id="stopSpeakBtn" class="icon-btn"><i class="fa-regular fa-circle-stop"></i></button>
+                                </div>
+                            </div>
+                            <textarea id="targetText" placeholder="Translation will appear here..." readonly></textarea>
+                            
+                            <!-- TTS Speed Control -->
+                            <div class="tts-controls">
+                                <i class="fa-solid fa-gauge-high"></i>
+                                <input type="range" id="speechSpeed" min="0.5" max="2" step="0.1" value="1" title="Speech Speed">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Translate Button -->
+                    <button id="translateBtn" class="primary-btn">
+                        <span>Translate</span>
+                        <i class="fa-solid fa-language"></i>
+                    </button>
+                </div>
+
+                <!-- Secondary Tools: Voice & OCR -->
+                <div class="tools-grid">
+                    <!-- Voice Translation -->
+                    <div class="card tool-card">
+                        <h3>Voice Translation</h3>
+                        <div class="voice-container">
+                            <button id="micBtn" class="mic-btn">
+                                <i class="fa-solid fa-microphone"></i>
+                            </button>
+                            <p id="micStatus">Click to speak</p>
+                            <div id="waveAnimation" class="wave-animation hidden">
+                                <span></span><span></span><span></span><span></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Image Translation (OCR) -->
+                    <div class="card tool-card">
+                        <h3>Image Translation</h3>
+                        <div id="dropZone" class="upload-area">
+                            <i class="fa-regular fa-image upload-icon"></i>
+                            <p>Click or drag image here</p>
+                            <input type="file" id="imageInput" accept="image/*" hidden>
+                        </div>
+                        <div id="ocrLoader" class="loader hidden">
+                            <i class="fa-solid fa-spinner fa-spin"></i> Extracting text...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: History Sidebar -->
+            <aside class="card history-sidebar">
+                <div class="history-header">
+                    <h3>History</h3>
+                    <button id="clearHistoryBtn" class="icon-btn delete-all"><i class="fa-solid fa-trash"></i></button>
+                </div>
+                
+                <div class="search-box">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" id="historySearch" placeholder="Search history...">
+                </div>
+
+                <div id="historyList" class="history-list">
+                    <!-- History items populated by JS -->
+                    <p class="empty-state">No recent translations.</p>
+                </div>
+            </aside>
+        </main>
+
+        <!-- Footer -->
+        <footer>
+            <p>&copy; 2026 GlobeLingo MVP. Built with Flask & Vanilla JS.</p>
+        </footer>
+    </div>
+
+    <!-- Error Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

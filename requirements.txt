@@ -1,0 +1,8 @@
+Flask
+requests
+Pillow
+Werkzeug
+deep-translator
+langdetect
+easyocr
+SpeechRecognition

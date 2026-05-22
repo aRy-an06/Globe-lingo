@@ -1,3 +1,8 @@
+import sys
+# Force UTF-8 encoding for stdout to prevent EasyOCR download progress bar from crashing on Windows
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
 from flask import Flask, render_template, request, jsonify
 from PIL import Image
 import io

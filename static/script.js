@@ -376,9 +376,9 @@ function speak(text, langCode) {
     // Google TTS URL provides much better and consistent voices across all browsers,
     // but limits to ~200 chars. We use it as primary for short sentences.
     if (text.length <= 200) {
-        const baseLang = finalLang.split('-')[0].toLowerCase();
         // client=tw-ob bypasses captcha for translate_tts
-        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${baseLang}&client=tw-ob`;
+        // We pass the full finalLang (e.g. zh-CN, pt-BR) because Google supports these dialects natively!
+        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${finalLang}&client=tw-ob`;
         currentAudio = new Audio(url);
         currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
         

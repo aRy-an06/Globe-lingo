@@ -357,6 +357,66 @@ async function performTranslation() {
 const synth = window.speechSynthesis;
 let currentAudio = null;
 
+let audioQueue = [];
+let isPlayingQueue = false;
+
+function playNextAudio() {
+    if (audioQueue.length === 0) {
+        isPlayingQueue = false;
+        return;
+    }
+    
+    isPlayingQueue = true;
+    const url = audioQueue.shift();
+    
+    currentAudio = new Audio(url);
+    currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
+    
+    currentAudio.onended = () => {
+        playNextAudio();
+    };
+    
+    currentAudio.play().catch(err => {
+        console.warn("Google TTS API URL failed:", err);
+        // Skip failed chunk and try playing the next one
+        playNextAudio();
+    });
+}
+
+function chunkText(text, maxLength) {
+    const chunks = [];
+    const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
+    
+    let currentChunk = "";
+    for (const sentence of sentences) {
+        if (currentChunk.length + sentence.length <= maxLength) {
+            currentChunk += sentence;
+        } else {
+            if (currentChunk) chunks.push(currentChunk.trim());
+            
+            // If a single sentence is > maxLength, we have to split it by words
+            if (sentence.length > maxLength) {
+                const words = sentence.split(' ');
+                let wordChunk = "";
+                for (const word of words) {
+                    if (wordChunk.length + word.length + 1 <= maxLength) {
+                        wordChunk += (wordChunk ? " " : "") + word;
+                    } else {
+                        if (wordChunk) chunks.push(wordChunk.trim());
+                        wordChunk = word;
+                    }
+                }
+                if (wordChunk) currentChunk = wordChunk;
+                else currentChunk = "";
+            } else {
+                currentChunk = sentence;
+            }
+        }
+    }
+    if (currentChunk) chunks.push(currentChunk.trim());
+    return chunks;
+}
+
 function speak(text, langCode) {
     if (!text) return;
     
@@ -367,82 +427,27 @@ function speak(text, langCode) {
         currentAudio.currentTime = 0;
     }
     
+    audioQueue = []; // Clear any ongoing chunks
+    isPlayingQueue = false;
+    
     // If the language is 'auto', try to use the last detected language code
     let finalLang = langCode;
     if (langCode === 'auto') {
         finalLang = lastDetectedLangCode || 'en';
     }
     
-    // Google TTS URL provides much better and consistent voices across all browsers,
-    // but limits to ~200 chars. We use it as primary for short sentences.
-    if (text.length <= 200) {
-        // client=tw-ob bypasses captcha for translate_tts
-        // We pass the full finalLang (e.g. zh-CN, pt-BR) because Google supports these dialects natively!
-        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${finalLang}&client=tw-ob`;
-        currentAudio = new Audio(url);
-        currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
-        
-        currentAudio.play().catch(err => {
-            console.warn("Google TTS API URL failed, falling back to browser TTS:", err);
-            speakBrowser(text, finalLang);
-        });
-    } else {
-        // Fall back to browser TTS for long texts
-        speakBrowser(text, finalLang);
-    }
-}
-
-function speakBrowser(text, finalLang) {
-    if (!synth) return;
+    // Chunk text to fit within Google's 200 character limit
+    const chunks = chunkText(text, 200);
     
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Determine the BCP-47 tag to request
-    const requestedLangTag = VOICE_LANG_MAP[finalLang] || finalLang || 'en-US';
-    utterance.lang = requestedLangTag;
-    utterance.rate = parseFloat(speechSpeed.value);
-
-    // Get list of voices
-    const voices = synth.getVoices();
-    
-    // Find best matching voice
-    let matchedVoice = null;
-    if (voices && voices.length > 0) {
-        // Try exact match (e.g., 'ru-RU')
-        matchedVoice = voices.find(v => v.lang.toLowerCase() === requestedLangTag.toLowerCase());
-        
-        // Try base language match (e.g., 'ru')
-        if (!matchedVoice) {
-            const baseLang = finalLang.split('-')[0].toLowerCase();
-            matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(baseLang));
+    chunks.forEach(chunk => {
+        if (chunk) {
+            // Google TTS URL provides much better and consistent voices across all browsers natively!
+            const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${finalLang}&client=tw-ob`;
+            audioQueue.push(url);
         }
-        
-        // Try any language match that contains the base language code
-        if (!matchedVoice) {
-            const baseLang = finalLang.split('-')[0].toLowerCase();
-            matchedVoice = voices.find(v => v.lang.toLowerCase().includes(baseLang));
-        }
-    }
+    });
     
-    if (matchedVoice) {
-        utterance.voice = matchedVoice;
-        console.log(`TTS: Using browser voice "${matchedVoice.name}" for "${finalLang}"`);
-    } else {
-        const langObj = LANGUAGES.find(l => l.code === finalLang);
-        const langName = langObj ? langObj.name : finalLang.toUpperCase();
-        console.warn(`TTS: No native browser voice found for ${langName}`);
-        showToast(`Native browser voice for ${langName} not found. Playing fallback.`);
-    }
-
-    utterance.onerror = (e) => {
-        console.error("SpeechSynthesisUtterance error:", e);
-    };
-
-    // Keep a global reference to avoid garbage collection bug in Chrome
-    window._activeUtterance = utterance;
-    
-    // Speak
-    synth.speak(utterance);
+    playNextAudio();
 }
 
 speakSourceBtn.addEventListener('click', () => speak(sourceText.value, sourceLangSelect.value));
@@ -453,6 +458,8 @@ stopSpeakBtn.addEventListener('click', () => {
         currentAudio.pause();
         currentAudio.currentTime = 0;
     }
+    audioQueue = [];
+    isPlayingQueue = false;
 });
 
 function initSpeechRecognition() {

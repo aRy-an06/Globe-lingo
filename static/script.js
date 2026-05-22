@@ -360,29 +360,6 @@ let currentAudio = null;
 let audioQueue = [];
 let isPlayingQueue = false;
 
-function playNextAudio() {
-    if (audioQueue.length === 0) {
-        isPlayingQueue = false;
-        return;
-    }
-    
-    isPlayingQueue = true;
-    const url = audioQueue.shift();
-    
-    currentAudio = new Audio(url);
-    currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
-    
-    currentAudio.onended = () => {
-        playNextAudio();
-    };
-    
-    currentAudio.play().catch(err => {
-        console.warn("Google TTS API URL failed:", err);
-        // Skip failed chunk and try playing the next one
-        playNextAudio();
-    });
-}
-
 function chunkText(text, maxLength) {
     const chunks = [];
     const sentences = text.match(/[^.!?\n]+[.!?\n]*/g) || [text];
@@ -394,7 +371,6 @@ function chunkText(text, maxLength) {
         } else {
             if (currentChunk) chunks.push(currentChunk.trim());
             
-            // If a single sentence is > maxLength, we have to split it by words
             if (sentence.length > maxLength) {
                 const words = sentence.split(' ');
                 let wordChunk = "";
@@ -420,34 +396,105 @@ function chunkText(text, maxLength) {
 function speak(text, langCode) {
     if (!text) return;
     
-    // Stop any ongoing speech
     if (synth) synth.cancel(); 
     if (currentAudio) {
         currentAudio.pause();
         currentAudio.currentTime = 0;
     }
     
-    audioQueue = []; // Clear any ongoing chunks
+    audioQueue = []; 
     isPlayingQueue = false;
     
-    // If the language is 'auto', try to use the last detected language code
     let finalLang = langCode;
     if (langCode === 'auto') {
         finalLang = lastDetectedLangCode || 'en';
     }
     
-    // Chunk text to fit within Google's 200 character limit
     const chunks = chunkText(text, 200);
     
     chunks.forEach(chunk => {
         if (chunk) {
-            // Google TTS URL provides much better and consistent voices across all browsers natively!
             const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(chunk)}&tl=${finalLang}&client=tw-ob`;
             audioQueue.push(url);
         }
     });
     
+    let isFirstChunk = true;
+    
+    function playNextAudio() {
+        if (audioQueue.length === 0) {
+            isPlayingQueue = false;
+            return;
+        }
+        
+        isPlayingQueue = true;
+        const url = audioQueue.shift();
+        
+        currentAudio = new Audio(url);
+        currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
+        
+        currentAudio.onended = () => {
+            isFirstChunk = false;
+            playNextAudio();
+        };
+        
+        currentAudio.play().catch(err => {
+            console.warn("Google TTS API URL failed:", err);
+            if (isFirstChunk) {
+                console.warn("Falling back to browser TTS...");
+                audioQueue = [];
+                speakBrowser(text, finalLang);
+            } else {
+                playNextAudio();
+            }
+        });
+    }
+    
     playNextAudio();
+}
+
+function speakBrowser(text, finalLang) {
+    if (!synth) return;
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    const requestedLangTag = VOICE_LANG_MAP[finalLang] || finalLang || 'en-US';
+    utterance.lang = requestedLangTag;
+    utterance.rate = parseFloat(speechSpeed.value);
+
+    const voices = synth.getVoices();
+    let matchedVoice = null;
+    
+    if (voices && voices.length > 0) {
+        matchedVoice = voices.find(v => v.lang.toLowerCase() === requestedLangTag.toLowerCase());
+        
+        if (!matchedVoice) {
+            const baseLang = finalLang.split('-')[0].toLowerCase();
+            matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(baseLang));
+        }
+        
+        if (!matchedVoice) {
+            const baseLang = finalLang.split('-')[0].toLowerCase();
+            matchedVoice = voices.find(v => v.lang.toLowerCase().includes(baseLang));
+        }
+    }
+    
+    if (matchedVoice) {
+        utterance.voice = matchedVoice;
+        console.log(`TTS: Using browser voice "${matchedVoice.name}" for "${finalLang}"`);
+    } else {
+        const langObj = LANGUAGES.find(l => l.code === finalLang);
+        const langName = langObj ? langObj.name : finalLang.toUpperCase();
+        console.warn(`TTS: No native browser voice found for ${langName}`);
+        showToast(`Native browser voice for ${langName} not found. Playing fallback.`);
+    }
+
+    utterance.onerror = (e) => {
+        console.error("SpeechSynthesisUtterance error:", e);
+    };
+
+    window._activeUtterance = utterance;
+    synth.speak(utterance);
 }
 
 speakSourceBtn.addEventListener('click', () => speak(sourceText.value, sourceLangSelect.value));

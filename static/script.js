@@ -675,6 +675,11 @@ async function handleImageUpload(file) {
         return;
     }
 
+    if (sourceLangSelect.value === 'auto') {
+        showToast("Please select the specific Source Language for the image. OCR needs to know the language!");
+        return;
+    }
+
     const formData = new FormData();
     formData.append('image', file);
     

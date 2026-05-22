@@ -5,7 +5,9 @@ import base64
 import easyocr
 import speech_recognition as sr
 from deep_translator import GoogleTranslator
-from langdetect import detect, LangDetectException
+import urllib.request
+import urllib.parse
+import json
 
 app = Flask(__name__)
 
@@ -80,9 +82,15 @@ def detect_language():
         return jsonify([{"language": "unknown"}]), 200
 
     try:
-        detected_code = detect(q)
+        # Use Google Translate unofficial API for highly accurate detection, even for Romanized text
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(q)}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req, timeout=5).read().decode()
+        data = json.loads(response)
+        detected_code = data[2] if len(data) > 2 and data[2] else 'unknown'
         return jsonify([{"language": detected_code}])
-    except Exception:
+    except Exception as e:
+        print("Detect Error:", e)
         return jsonify([{"language": "unknown"}]), 200
 
 @app.route('/ocr', methods=['POST'])

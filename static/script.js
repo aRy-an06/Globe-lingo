@@ -170,6 +170,7 @@ let isServerSTT = false;   // true when using the server-side fallback
 let pcmChunks = [];        // raw PCM chunks collected via AudioContext
 let audioCtx = null;
 let mediaStream = null;
+let lastDetectedLangCode = ''; // tracks the last language code detected from typing or speaking
 
 // --- DOM Elements ---
 const sourceLangSelect = document.getElementById('sourceLang');
@@ -298,6 +299,7 @@ async function detectLanguage() {
         
         if (data && data.length > 0) {
             const code = data[0].language;
+            lastDetectedLangCode = code; // Save the detected code for TTS fallback
             const langObj = LANGUAGES.find(l => l.code === code);
             // Show the language name if we know it, otherwise just show the code
             if (langObj) detectedLangLabel.textContent = `Detected: ${langObj.name}`;
@@ -319,6 +321,11 @@ async function performTranslation() {
 
     const source = sourceLangSelect.value;
     const target = targetLangSelect.value;
+
+    // Trigger detectLanguage asynchronously if source is auto, so UI and lastDetectedLangCode are updated
+    if (source === 'auto') {
+        detectLanguage();
+    }
 
     const btnIcon = translateBtn.querySelector('i');
     btnIcon.className = 'fa-solid fa-spinner fa-spin';
@@ -348,20 +355,105 @@ async function performTranslation() {
 }
 
 const synth = window.speechSynthesis;
+let currentAudio = null;
 
 function speak(text, langCode) {
-    if (!synth || !text) return;
-    synth.cancel(); 
+    if (!text) return;
+    
+    // Stop any ongoing speech
+    if (synth) synth.cancel(); 
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+    }
+    
+    // If the language is 'auto', try to use the last detected language code
+    let finalLang = langCode;
+    if (langCode === 'auto') {
+        finalLang = lastDetectedLangCode || 'en';
+    }
+    
+    // Google TTS URL provides much better and consistent voices across all browsers,
+    // but limits to ~200 chars. We use it as primary for short sentences.
+    if (text.length <= 200) {
+        const baseLang = finalLang.split('-')[0].toLowerCase();
+        // client=tw-ob bypasses captcha for translate_tts
+        const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${baseLang}&client=tw-ob`;
+        currentAudio = new Audio(url);
+        currentAudio.playbackRate = parseFloat(speechSpeed.value) || 1;
+        
+        currentAudio.play().catch(err => {
+            console.warn("Google TTS API URL failed, falling back to browser TTS:", err);
+            speakBrowser(text, finalLang);
+        });
+    } else {
+        // Fall back to browser TTS for long texts
+        speakBrowser(text, finalLang);
+    }
+}
+
+function speakBrowser(text, finalLang) {
+    if (!synth) return;
+    
     const utterance = new SpeechSynthesisUtterance(text);
-    // Use the mapped dialect code; fall back to the raw code (browser usually handles standard BCP-47 codes)
-    utterance.lang = VOICE_LANG_MAP[langCode] || langCode || 'en-US';
+    
+    // Determine the BCP-47 tag to request
+    const requestedLangTag = VOICE_LANG_MAP[finalLang] || finalLang || 'en-US';
+    utterance.lang = requestedLangTag;
     utterance.rate = parseFloat(speechSpeed.value);
+
+    // Get list of voices
+    const voices = synth.getVoices();
+    
+    // Find best matching voice
+    let matchedVoice = null;
+    if (voices && voices.length > 0) {
+        // Try exact match (e.g., 'ru-RU')
+        matchedVoice = voices.find(v => v.lang.toLowerCase() === requestedLangTag.toLowerCase());
+        
+        // Try base language match (e.g., 'ru')
+        if (!matchedVoice) {
+            const baseLang = finalLang.split('-')[0].toLowerCase();
+            matchedVoice = voices.find(v => v.lang.toLowerCase().startsWith(baseLang));
+        }
+        
+        // Try any language match that contains the base language code
+        if (!matchedVoice) {
+            const baseLang = finalLang.split('-')[0].toLowerCase();
+            matchedVoice = voices.find(v => v.lang.toLowerCase().includes(baseLang));
+        }
+    }
+    
+    if (matchedVoice) {
+        utterance.voice = matchedVoice;
+        console.log(`TTS: Using browser voice "${matchedVoice.name}" for "${finalLang}"`);
+    } else {
+        const langObj = LANGUAGES.find(l => l.code === finalLang);
+        const langName = langObj ? langObj.name : finalLang.toUpperCase();
+        console.warn(`TTS: No native browser voice found for ${langName}`);
+        showToast(`Native browser voice for ${langName} not found. Playing fallback.`);
+    }
+
+    utterance.onerror = (e) => {
+        console.error("SpeechSynthesisUtterance error:", e);
+    };
+
+    // Keep a global reference to avoid garbage collection bug in Chrome
+    window._activeUtterance = utterance;
+    
+    // Speak
     synth.speak(utterance);
 }
 
 speakSourceBtn.addEventListener('click', () => speak(sourceText.value, sourceLangSelect.value));
 speakTargetBtn.addEventListener('click', () => speak(targetText.value, targetLangSelect.value));
-stopSpeakBtn.addEventListener('click', () => { if (synth) synth.cancel(); });
+stopSpeakBtn.addEventListener('click', () => { 
+    if (synth) synth.cancel(); 
+    if (currentAudio) {
+        currentAudio.pause();
+        currentAudio.currentTime = 0;
+    }
+});
 
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
